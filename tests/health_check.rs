@@ -5,6 +5,7 @@ use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::net::TcpListener;
 use uuid::Uuid;
 use once_cell::sync::Lazy;
+use zero2prod::email_client::EmailClient;
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
@@ -35,7 +36,15 @@ async fn spawn_app() -> TestApp {
     configuration.database.database_name = Uuid::new_v4().to_string();
     let connection_pool = configure_database(&configuration.database).await;
 
-    let server = run(listener, connection_pool.clone()).expect("Failed to bind address");
+    let sender_email = configuration.email_client.sender()
+        .expect("Invalid sender email address.");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email
+    );
+
+    let server = run(listener, connection_pool.clone(), email_client)
+        .expect("Failed to bind address");
     let _ = tokio::spawn(server);
     TestApp {
         address,
