@@ -32,12 +32,12 @@ chrono = "0.4.15"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
-tracing-bunyan-formatter = "0.3"
+tracing-bunyan-formatter = "0.3.1"
 tracing-log = "0.1"
 serde-aux = "3"
 unicode-segmentation = "1"
 validator = "0.14"
-tracing-actix-web = "0.5"
+tracing-actix-web = "0.7"
 secrecy = { version = "0.8", features = ["serde"] }
 rand = { version = "0.8", features=["std_rng"] }
 
