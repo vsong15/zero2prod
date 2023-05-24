@@ -40,6 +40,7 @@ validator = "0.14"
 tracing-actix-web = "0.7"
 secrecy = { version = "0.8", features = ["serde"] }
 rand = { version = "0.8", features=["std_rng"] }
+thiserror = "1"
 
 [dependencies.sqlx]
 version = "0.5.7"
