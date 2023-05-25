@@ -3,6 +3,7 @@ use actix_web::ResponseError;
 use sqlx::PgPool;
 use crate::routes::error_chain_fmt;
 use actix_web::http::StatusCode;
+use crate::email_client::EmailClient;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -60,7 +61,18 @@ impl ResponseError for PublishError {
 pub async fn publish_newsletter(
     body: web::Json<BodyData>,
     pool: web::Data<PgPool>,
+    email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, PublishError> {
     let subscribers = get_confirmed_subscribers(&pool).await?;
+    for subscriber in subscribers {
+        email_client
+            .send_email(
+                subscriber.email,
+                &body.title,
+                &body.content.html,
+                &body.content.text,
+            )
+            .await?;
+    }
     Ok(HttpResponse::Ok().finish())
 }
