@@ -5,6 +5,7 @@ use crate::routes::error_chain_fmt;
 use actix_web::http::StatusCode;
 use crate::email_client::EmailClient;
 use anyhow::Context;
+use crate::domain::SubscriberEmail;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -19,15 +20,14 @@ pub struct Content {
 }
 
 struct ConfirmedSubscriber {
-    email: String,
+    email: SubscriberEmail,
 }
 
 #[tracing::instrument(name = "Get confirmed subscribers", skip(pool))]
 async fn get_confirmed_subscribers(
     pool: &PgPool,
-) -> Result<Vec<ConfirmedSubscriber>, anyhow::Error> {
-    let rows = sqlx::query_as!(
-        ConfirmedSubscriber,
+) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
+    let confirmed_subscribers = sqlx::query!(
         r#"
         SELECT email
         FROM subscriptions
@@ -35,21 +35,13 @@ async fn get_confirmed_subscribers(
         "#,
     )
     .fetch_all(pool)
-    .await?;
-
-    let confirmed_subscribers = rows
-        .into_iter()
-        .filter_map(|r| match SubscriberEmail::parse(r.email) {
-            Ok(email) => Some(ConfirmedSubscriber { email }),
-            Err(error) => {
-                tracing::warn!(
-                    "A confirmed subscriber is using an invalid email address.\n{}.",
-                    error
-                );
-                None
-            }
-        })
-        .collect();
+    .await?
+    .into_iter()
+    .map(|r| match SubscriberEmail::parse(r.email) {
+        Ok(email) => Ok(ConfirmedSubscriber { email }),
+        Err(error) => Err(anyhow::anyhow!(error)),
+    })
+    .collect();
     Ok(confirmed_subscribers)
 }
 
@@ -80,17 +72,31 @@ pub async fn publish_newsletter(
 ) -> Result<HttpResponse, PublishError> {
     let subscribers = get_confirmed_subscribers(&pool).await?;
     for subscriber in subscribers {
-        email_client
-            .send_email(
-                subscriber.email,
-                &body.title,
-                &body.content.html,
-                &body.content.text,
-            )
-            .await
-            .with_context(|| {
-                format!("Failed to send newsletter issue to {}", subscriber.email)
-            })?;
+        match subscriber {
+            Ok(subscriber) => {
+                email_client
+                    .send_email(
+                        subscriber.email,
+                        &body.title,
+                        &body.content.html,
+                        &body.content.text,
+                    )
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to send newsletter issue to {}",
+                            subscriber.email
+                        )
+                    })?;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error.cause_chain = ?error,
+                    "Skipping a confirmed subscriber. \
+                    Their stored contact details are invalid",
+                );
+            }
+        }
     }
     Ok(HttpResponse::Ok().finish())
 }
