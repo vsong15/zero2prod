@@ -9,6 +9,7 @@ use secrecy::{Secret, ExposeSecret};
 use actix_web::http::header::{HeaderMap, HeaderValue};
 use actix_web::HttpRequest;
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use crate::telemetry::spawn_blocking_with_tracing;
 
 #[derive(serde::Deserialize)]
 pub struct BodyData {
@@ -178,7 +179,7 @@ async fn validate_credentials(
         .map_err(PublishError::UnexpectedError)?
         .ok_or_else(|| PublishError::AuthError(anyhow::anyhow!("Unknown username.")))?;
 
-    tokio::task::spawn_blocking(move || {
+    spawn_blocking_with_tracing(move || {
         verify_password_hash(
             expected_password_hash,
             credentials.password
