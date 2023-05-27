@@ -8,6 +8,7 @@ use tracing_actix_web::TracingLogger;
 use crate::email_client::EmailClient;
 use crate::configuration::{Settings, DatabaseSettings};
 use sqlx::postgres::PgPoolOptions;
+use crate::routes::home;
 
 pub struct Application {
     port: u16,
@@ -81,6 +82,7 @@ fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/", web::get().to(home))
             .app_data(db_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_url.clone())
