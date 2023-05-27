@@ -45,6 +45,7 @@ anyhow = "1"
 base64 = "0.13"
 sha3 = "0.9"
 argon2 = { version = "0.3", features = ["std"] }
+urlencoding = "2"
 
 [dependencies.sqlx]
 version = "0.5.7"
