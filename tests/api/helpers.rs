@@ -107,7 +107,7 @@ impl TestApp {
     }
     
     pub async fn get_login_html(&self) -> String {
-        reqwest::Client::new()
+        self.api_client
             .get(&format!("{}/login", &self.address))
             .send()
             .await
