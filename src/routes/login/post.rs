@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use crate::authentication::AuthError;
 use crate::routes::error_chain_fmt;
 use actix_web::error::InternalError;
+use actix_web::cookie::Cookie;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -43,6 +44,7 @@ pub async fn login(
             };
             let response = HttpResponse::SeeOther()
                 .insert_header((LOCATION, "/login"))
+                .cookie(Cookie::new("_flash", e.to_string()))
                 .finish();
             Err(InternalError::from_response(e, response))
         }
