@@ -4,6 +4,7 @@ use actix_web::http::header::ContentType;
 use anyhow::Context;
 use sqlx::PgPool;
 use crate::session_state::TypedSession;
+use actix_web::http::header::LOCATION;
 
 fn e500<T>(e: T) -> actix_web::Error
 where
@@ -22,7 +23,9 @@ pub async fn admin_dashboard(
     {
         get_username(user_id, &pool).await.map_err(e500)?
     } else {
-        todo!()
+        return Ok(HttpResponse::SeeOther()
+            .insert_header((LOCATION, "/login"))
+            .finish());
     };
     Ok(HttpResponse::Ok()
         .content_type(ContentType::html())
