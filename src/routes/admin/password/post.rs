@@ -6,6 +6,8 @@ use actix_web_flash_messages::FlashMessage;
 use crate::routes::admin::dashboard::get_username;
 use sqlx::PgPool;
 use crate::authentication::{validate_credentials, AuthError, Credentials};
+use actix_web::error::InternalError;
+use uuid::Uuid;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -13,17 +15,25 @@ pub struct FormData {
     new_password: Secret<String>,
     new_password_check: Secret<String>,
 }
+async fn reject_anonymous_users(
+    session: TypedSession
+) -> Result<Uuid, actix_web::Error> {
+    match session.get_user_id().map_err(e500)? {
+        Some(user_id) => Ok(user_id),
+        None => {
+            let response = see_other("/login");
+            let e = anyhow::anyhow!("The user has not logged in");
+            Err(InternalError::from_response(e, response).into())
+        }
+    }
+}
 
 pub async fn change_password(
     form: web::Form<FormData>,
     session: TypedSession,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = session.get_user_id().map_err(e500)?;
-    if user_id.is_none() {
-        return Ok(see_other("/login"));
-    };
-    let user_id = user_id.unwrap();
+    let user_id = reject_anonymous_users(session).await?;
     if form.new_password.expose_secret() != form.new_password_check.expose_secret() {
         FlashMessage::error(
             "You entered two different new passwords - the field values must match.",
