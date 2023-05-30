@@ -1,4 +1,4 @@
-use crate::helpers::{spawn_app, TestApp, ConfirmationLinks};
+use crate::helpers::{spawn_app, TestApp, ConfirmationLinks, assert_is_redirect_to};
 use wiremock::matchers::{any, method, path};
 use wiremock::{Mock, ResponseTemplate};
 use uuid::Uuid;
@@ -205,4 +205,49 @@ async fn invalid_password_is_rejected() {
         r#"Basic realm="publish""#,
         response.headers()["WWW-Authenticate"]
     );
+}
+
+#[tokio::test]
+async fn newsletter_creation_is_idempotent() {
+    // Arrange
+    let app = spawn_app().await;
+    create_confirmed_subscriber(&app).await;
+    app.test_user.login(&app).await;
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    // Act - Part 1 - Submit newsletter form
+    let newsletter_request_body = serde_json::json!({
+        "title": "Newsletter title",
+        "text_content": "Newsletter body as plain text",
+        "html_content": "<p>Newsletter body as HTML</p>",
+        // We expect the idempotency key as part of the
+        // form data, not as an header
+        "idempotency_key": uuid::Uuid::new_v4().to_string()
+    });
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    // Act - Part 2 - Follow the redirect
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
+    );
+
+    // Act - Part 3 - Submit newsletter form **again**
+    let response = app.post_publish_newsletter(&newsletter_request_body).await;
+    assert_is_redirect_to(&response, "/admin/newsletters");
+
+    // Act - Part 4 - Follow the redirect
+    let html_page = app.get_publish_newsletter_html().await;
+    assert!(
+        html_page.contains("<p><i>The newsletter issue has been published!</i></p>")
+    );
+
+    // Mock verifies on Drop that we have sent the newsletter email **once**
 }
