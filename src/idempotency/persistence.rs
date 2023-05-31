@@ -5,6 +5,7 @@ use uuid::Uuid;
 use actix_web::http::StatusCode;
 use actix_web::body::to_bytes;
 use sqlx::postgres::PgHasArrayType;
+use sqlx::{Postgres, Transaction};
 
 pub async fn get_saved_response(
     pool: &PgPool,
@@ -49,7 +50,7 @@ struct HeaderPairRecord {
 }
 
 pub async fn save_response(
-    pool: &PgPool,
+    mut transaction: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,
     user_id: Uuid,
     http_response: HttpResponse,
@@ -84,8 +85,9 @@ pub async fn save_response(
         headers,
         body.as_ref()
     )
-    .execute(pool)
+    .execute(&mut transaction)
     .await?;
+    transaction.commit().await?;
 
     let http_response = response_head.set_body(body).map_into_boxed_body();
     Ok(http_response)
@@ -97,8 +99,9 @@ impl PgHasArrayType for HeaderPairRecord {
     }
 }    
 
+#[allow(clippy::large_enum_variant)]
 pub enum NextAction {
-    StartProcessing,
+    StartProcessing(Transaction<'static, Postgres>),
     ReturnSavedResponse(HttpResponse)
 }
     
@@ -107,6 +110,10 @@ pub async fn try_processing(
     idempotency_key: &IdempotencyKey,
     user_id: Uuid
 ) -> Result<NextAction, anyhow::Error> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query!("SET TRANSACTION ISOLATION LEVEL repeatable read")
+        .execute(&mut transaction)
+        .await?;
     let n_inserted_rows = sqlx::query!(
         r#"
         INSERT INTO idempotency (
@@ -120,11 +127,11 @@ pub async fn try_processing(
         user_id,
         idempotency_key.as_ref()
     )
-    .execute(pool)
+    .execute(&mut transaction)
     .await?
     .rows_affected();
     if n_inserted_rows > 0 {
-        Ok(NextAction::StartProcessing)
+        Ok(NextAction::StartProcessing(transaction))
     } else {
         let saved_response = get_saved_response(pool, idempotency_key, user_id)
             .await?
