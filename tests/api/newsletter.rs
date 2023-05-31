@@ -226,8 +226,6 @@ async fn newsletter_creation_is_idempotent() {
         "title": "Newsletter title",
         "text_content": "Newsletter body as plain text",
         "html_content": "<p>Newsletter body as HTML</p>",
-        // We expect the idempotency key as part of the
-        // form data, not as an header
         "idempotency_key": uuid::Uuid::new_v4().to_string()
     });
     let response = app.post_publish_newsletter(&newsletter_request_body).await;
