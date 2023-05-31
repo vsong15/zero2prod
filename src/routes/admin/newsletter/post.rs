@@ -1,8 +1,15 @@
-use crate::idempotency::{IdempotencyKey, get_saved_response, save_response};
+use crate::idempotency::{IdempotencyKey, save_response};
 use crate::utils::e400;
 use crate::idempotency::{try_processing, NextAction};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
+use actix_web::{web, HttpResponse};
+use sqlx::PgPool;
+use crate::authentication::UserId;
+use actix_web::web::ReqData;
+use crate::utils::{e500, see_other};
+use actix_web_flash_messages::FlashMessage;
+use anyhow::Context;
 
 #[derive(serde::Deserialize)]
 pub struct FormData {
@@ -30,7 +37,7 @@ pub async fn publish_newsletter(
         idempotency_key 
     } = form.0;
     let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
-    let transaction = match try_processing(&pool, &idempotency_key, *user_id)
+    let mut transaction = match try_processing(&pool, &idempotency_key, *user_id)
         .await
         .map_err(e500)?
     {
