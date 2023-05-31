@@ -12,11 +12,14 @@ pub struct FormData {
     idempotency_key: String,
 }
 
-#[tracing::instrument(/* */)]
+#[tracing::instrument(
+    name = "Publish a newsletter issue",
+    skip_all,
+    fields(user_id=%&*user_id)
+)]
 pub async fn publish_newsletter(
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
-    email_client: web::Data<EmailClient>,
     user_id: ReqData<UserId>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = user_id.into_inner();
@@ -36,50 +39,28 @@ pub async fn publish_newsletter(
             success_message().send();
             return Ok(saved_response);
         }
-    }
-    if let Some(saved_response) = get_saved_response(&pool, &idempotency_key, *user_id)
+    };
+    let issue_id = insert_newsletter_issue(&mut transaction, &title, &text_content, &html_content)
         .await
-        .map_err(e500)?
-    {
-        return Ok(saved_response);
-    }
-    let subscribers = get_confirmed_subscribers(&pool).await.map_err(e500)?;
-    for subscriber in subscribers {
-        match subscriber {
-            Ok(subscriber) => {
-                email_client
-                    .send_email(&subscriber.email, &title, &html_content, &text_content)
-                    .await
-                    .with_context(/* */)
-                    .map_err(e500)?;
-            }
-            Err(error) => {
-            tracing::warn!(/* */);
-            }
-        }
-    }
-    FlashMessage::info("The newsletter issue has been published!").send();
-    success_message().send();
+        .context("Failed to store newsletter issue details")
+        .map_err(e500)?;
+    enqueue_delivery_tasks(&mut transaction, issue_id)
+        .await
+        .context("Failed to enqueue delivery tasks")
+        .map_err(e500)?;
     let response = see_other("/admin/newsletters");
     let response = save_response(transaction, &idempotency_key, *user_id, response)
         .await
         .map_err(e500)?;
+    success_message().send();
     Ok(response)
 }
 
 fn success_message() -> FlashMessage {
-    FlashMessage::info("The newsletter issue has been published!")
-}
-
-struct ConfirmedSubscriber {
-    email: SubscriberEmail,
-}
-
-#[tracing::instrument(/* */)]
-async fn get_confirmed_subscribers(
-pool: &PgPool,
-) -> Result<Vec<Result<ConfirmedSubscriber, anyhow::Error>>, anyhow::Error> {
-    /* */
+    FlashMessage::info(
+        "The newsletter issue has been accepted - \
+        emails will go out shortly.",
+    )
 }
 
 #[tracing::instrument(skip_all)]
