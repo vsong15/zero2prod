@@ -3,6 +3,7 @@ use actix_web::HttpResponse;
 use sqlx::PgPool;
 use uuid::Uuid;
 use actix_web::http::StatusCode;
+use actix_web::body::to_bytes;
 
 pub async fn get_saved_response(
     pool: &PgPool,
@@ -47,10 +48,23 @@ struct HeaderPairRecord {
 }
 
 pub async fn save_response(
-    _pool: &PgPool,
-    _idempotency_key: &IdempotencyKey,
-    _user_id: Uuid,
-    _http_response: &HttpResponse
-) -> Result<(), anyhow::Error> {
-    todo!()
+    pool: &PgPool,
+    idempotency_key: &IdempotencyKey,
+    user_id: Uuid,
+    http_response: HttpResponse,
+) -> Result<HttpResponse, anyhow::Error> {
+    let (response_head, body) = http_response.into_parts();
+    let body = to_bytes(body).await.map_err(|e| anyhow::anyhow!("{}", e))?;
+    let status_code = response_head.status().as_u16() as i16;
+    let headers = {
+    let mut h = Vec::with_capacity(response_head.headers().len());
+        for (name, value) in response_head.headers().iter() {
+            let name = name.as_str().to_owned();
+            let value = value.as_bytes().to_owned();
+            h.push(HeaderPairRecord { name, value });
+        }
+        h
+    };
+    let http_response = response_head.set_body(body).map_into_boxed_body();
+    Ok(http_response)
 }    
