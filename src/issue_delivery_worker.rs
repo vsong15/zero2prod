@@ -4,6 +4,7 @@ use tracing::{field::display, Span};
 use uuid::Uuid;
 use crate::domain::SubscriberEmail;
 use std::time::Duration;
+use crate::{configuration::Settings, startup::get_connection_pool};
 
 enum ExecutionOutcome {
     TaskCompleted,
@@ -157,3 +158,22 @@ async fn worker_loop(
         }
     }
 }
+
+pub async fn run_worker_until_stopped(
+    configuration: Settings
+) -> Result<(), anyhow::Error> {
+    let connection_pool = get_connection_pool(&configuration.database);
+
+    let sender_email = configuration
+        .email_client
+        .sender()
+        .expect("Invalid sender email address.");
+    let timeout = configuration.email_client.timeout();
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.authorization_token,
+        timeout,
+    );
+    worker_loop(connection_pool, email_client).await
+}    
